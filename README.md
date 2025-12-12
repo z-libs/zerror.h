@@ -8,10 +8,11 @@ It is designed to be **Zero Overhead** in the success path and seamlessly integr
 
 * **Result Pattern**: Functions return a tagged union (`zres` or `ResInt`) containing either a value or an error.
 * **Stack Tracing**: Errors automatically record their path through the call stack (Logical Traceback) when enabled.
-* **Context Propagation**: Attach variables and messages to errors as they bubble up (e.g., "Transaction failed" -> "ID: 420").
+* **Context Propagation**: Attach variables and messages to errors as they bubble up (for example, "Transaction failed" -> "ID: 420").
 * **Debugger Integration**: Automatically triggers breakpoints (`SIGTRAP`) at the exact moment an error is created.
 * **Modern Syntax**: Use `try()`, `check()`, and `defer()` macros for cleaner control flow.
 * **Formatted Errors**: Create errors with `printf`-style formatting directly.
+* **OS Integration**: Built-in support for wrapping system `errno` (for example, "Permission denied") and checking system calls.
 * **Thread Safe**: Error buffers use Thread Local Storage (TLS).
 * **Single Header**: Drop-in and use. No linking required.
 
@@ -34,7 +35,7 @@ It is designed to be **Zero Overhead** in the success path and seamlessly integr
 
 ## Quick Start
 
-### Defining a Result Type
+### 1. Defining a Result Type
 
 Instead of returning `int` and checking for `-1`, define a Result type for your data.
 
@@ -44,7 +45,7 @@ typedef struct { int id; char *name; } User;
 DEFINE_RESULT(User, ResUser)
 ```
 
-### Returning Results
+### 2. Returning Results
 
 Functions return either `_ok(value)` or `_err(error)`. You can use formatted strings when creating errors.
 
@@ -94,6 +95,7 @@ Define `Z_ENABLE_TRACE` before including the header. Every time an error passes 
 >     at calculate_physics (physics.c:15)
 >     at update_entity (game.c:24)
 >     at game_loop (main.c:40) [Origin]
+>     [Expr] calculate_physics(mass)
 > ```
 
 ### Enable Debug Traps
@@ -116,6 +118,19 @@ zres process_transaction(int id)
     // If this fails, the error trace will include "Transaction ID: [id]".
     check_ctx(verify_funds(id), "Transaction ID: %d", id);
     return zres_ok();
+}
+```
+
+### System Errors (`zerr_errno`)
+
+Use `zerr_errno` to automatically append the OS error string.
+
+```c
+FILE *f = fopen("secrets.txt", "r");
+if (!f) 
+{
+    // Output: "Failed to open config: Permission denied".
+    return ResPtr_err(zerr_errno(EACCES, "Failed to open config"));
 }
 ```
 
@@ -151,7 +166,7 @@ ResInt calculate(int val)
 Ensure resources are freed even if an error occurs.
 
 ```c
-void process_file(const char* path)
+void process_file(const char* path) 
 {
     FILE *f = fopen(path, "r");
     defer( fclose(f) ); // Runs when scope exits (Error OR Success).
@@ -173,6 +188,7 @@ These macros rely on compiler extensions (Statement Expressions). They are avail
 | `check(expr)` | Evaluates `expr` (void result). If error, returns it. |
 | `try_into(T, expr)` | Like `try`, but converts the error to return type `T`. **Use when return types differ.** |
 | `check_into(T, expr)`| Like `check`, but returns error of type `T`. |
+|`check_sys(expr, fmt...)`| Checks integer `expr != 0`. If true, captures errno and returns error. |
 | `check_ctx(expr, fmt...)`| Like `check`, but wraps the error with a formatted message (variables). |
 | `check_wrap(expr, fmt...)`| Like `check`, but wraps the error with a new high-level description. |
 | `try_ptr(T, ptr, code, msg)` | Checks if `ptr` is NULL. If so, returns error `T`. |
@@ -193,6 +209,7 @@ These macros rely on compiler extensions (Statement Expressions). They are avail
 | Function/Macro | Description |
 | :--- | :--- |
 | `zerr_create(code, fmt, ...)` | Creates error with formatted message. Traps if `Z_DEBUG` is set. |
+| `zerr_errno(code, fmt, ...)` | Like create, but appends `strerror(errno)`. |
 | `zres_ok()` | Returns generic "Success". |
 | `zres_err(e)` | Returns generic "Failure". |
 | `T##_ok(val)` | Returns typed success (e.g., `ResInt_ok(5)`). |
@@ -219,3 +236,5 @@ These macros rely on compiler extensions (Statement Expressions). They are avail
 | `Z_SHORT_ERR` | Enables short aliases (`try`, `check`, `defer`, etc.). |
 | `Z_ENABLE_TRACE` | Enables logical stack tracing. |
 | `Z_DEBUG` | Enables breakpoints (`SIGTRAP`) on error creation. |
+| `Z_NO_COLOR` | Disables ANSI color codes in output. |
+| `Z_PANIC_ACTION` | Override the panic behavior (Default: `abort()`). |
