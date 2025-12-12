@@ -130,7 +130,7 @@ DEFINE_RESULT(void*,    ResPtr)
 DEFINE_RESULT(char*,    ResStr)
 
 /* Trace Logic. */
-#ifdef Z_ENABLE_TRACE
+#ifdef ZERROR_ENABLE_TRACE
     #define Z_TRACE_OP(e) zerr_add_trace(e, __func__, __FILE__, __LINE__)
 #else
     #define Z_TRACE_OP(e) (e)
