@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <errno.h>
 #define ZERROR_IMPLEMENTATION
-#define Z_SHORT_ERR 
+#define ZERROR_SHORT_NAMES 
 #include "zerror.h"
 
 ResPtr open_config_file(const char *path) 

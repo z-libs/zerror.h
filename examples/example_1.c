@@ -2,7 +2,7 @@
 #include <stdio.h>
 
 #define ZERROR_IMPLEMENTATION
-#define Z_SHORT_ERR 
+#define ZERROR_SHORT_NAMES 
 #include "zerror.h"
 
 zres read_sector(int sector_id) 

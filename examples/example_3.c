@@ -3,7 +3,7 @@
 #include <string.h>
 
 #define ZERROR_IMPLEMENTATION
-#define Z_SHORT_ERR 
+#define ZERROR_SHORT_NAMES 
 #include "zerror.h"
 
 typedef struct 

@@ -1,8 +1,8 @@
 
 #include <stdio.h>
 #define ZERROR_IMPLEMENTATION
-#define Z_SHORT_ERR 
-#define Z_ENABLE_TRACE 
+#define ZERROR_SHORT_NAMES 
+#define ZERROR_ENABLE_TRACE 
 #include "zerror.h"
 
 ResInt calculate_physics(int mass) 

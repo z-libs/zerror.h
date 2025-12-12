@@ -26,10 +26,10 @@ It is designed to be **Zero Overhead** in the success path and seamlessly integr
 #include "zerror.h"
 ```
 
-> **Optional Short Macros:** To enable short keywords like `try`, `check`, and `defer`, define `Z_SHORT_ERR` before including the header.
+> **Optional Short Macros:** To enable short keywords like `try`, `check`, and `defer`, define `ZERROR_SHORT_NAMES` before including the header.
 
 ```c
-#define Z_SHORT_ERR
+#define ZERROR_SHORT_NAMES
 #include "zerror.h"
 ```
 
@@ -54,7 +54,7 @@ ResUser find_user(int id)
 {
     if (id < 0) 
     {
-        // Z_DEBUG will trigger a breakpoint here automatically!
+        // ZERROR_DEBUG will trigger a breakpoint here automatically!
         return ResUser_err(zerr_create(400, "Invalid ID: %d", id));
     }
     return ResUser_ok((User){id, "Alice"});
@@ -99,10 +99,10 @@ Define `Z_ENABLE_TRACE` before including the header. Every time an error passes 
 > ```
 
 ### Enable Debug Traps
-Define `Z_DEBUG` to force a hardware breakpoint (`SIGTRAP`) whenever an error is created. This allows you to inspect the state in GDB/VS/LLDB *before* the stack unwinds.
+Define `ZERROR_DEBUG` to force a hardware breakpoint (`SIGTRAP`) whenever an error is created. This allows you to inspect the state in GDB/VS/LLDB *before* the stack unwinds.
 
 ```c
-#define Z_DEBUG
+#define ZERROR_DEBUG
 #include "zerror.h"
 ```
 
@@ -208,7 +208,7 @@ These macros rely on compiler extensions (Statement Expressions). They are avail
 
 | Function/Macro | Description |
 | :--- | :--- |
-| `zerr_create(code, fmt, ...)` | Creates error with formatted message. Traps if `Z_DEBUG` is set. |
+| `zerr_create(code, fmt, ...)` | Creates error with formatted message. Traps if `ZERROR_DEBUG` is set. |
 | `zerr_errno(code, fmt, ...)` | Like create, but appends `strerror(errno)`. |
 | `zres_ok()` | Returns generic "Success". |
 | `zres_err(e)` | Returns generic "Failure". |
@@ -233,8 +233,8 @@ These macros rely on compiler extensions (Statement Expressions). They are avail
 | Define | Effect |
 | :--- | :--- |
 | `ZERROR_IMPLEMENTATION` | Enables the implementation (define in one `.c` file). |
-| `Z_SHORT_ERR` | Enables short aliases (`try`, `check`, `defer`, etc.). |
-| `Z_ENABLE_TRACE` | Enables logical stack tracing. |
-| `Z_DEBUG` | Enables breakpoints (`SIGTRAP`) on error creation. |
-| `Z_NO_COLOR` | Disables ANSI color codes in output. |
-| `Z_PANIC_ACTION` | Override the panic behavior (Default: `abort()`). |
+| `ZERROR_SHORT_NAMES` | Enables short aliases (`try`, `check`, `defer`, etc.). |
+| `ZERROR_ENABLE_TRACE` | Enables logical stack tracing. |
+| `ZERROR_DEBUG` | Enables breakpoints (`SIGTRAP`) on error creation. |
+| `ZERROR_NO_COLOR` | Disables ANSI color codes in output. |
+| `ZERROR_PANIC_ACTION` | Override the panic behavior (Default: `abort()`). |

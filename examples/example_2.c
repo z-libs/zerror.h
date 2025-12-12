@@ -3,7 +3,7 @@
 #include <stdlib.h>
 
 #define ZERROR_IMPLEMENTATION
-#define Z_SHORT_ERR 
+#define ZERROR_SHORT_NAMES 
 #include "zerror.h"
 
 zres verify_header(FILE *f) 

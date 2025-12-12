@@ -1,9 +1,9 @@
 
 #include <stdio.h>
 #define ZERROR_IMPLEMENTATION
-#define Z_SHORT_ERR 
-#define Z_ENABLE_TRACE
-#define Z_DEBUG
+#define ZERROR_SHORT_NAMES 
+#define ZERROR_ENABLE_TRACE
+#define ZERROR_DEBUG
 #include "zerror.h"
 
 ResInt parse_id(const char *input) 

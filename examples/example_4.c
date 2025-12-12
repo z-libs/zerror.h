@@ -1,7 +1,7 @@
 
 #include <stdio.h>
 #define ZERROR_IMPLEMENTATION
-#define Z_SHORT_ERR 
+#define ZERROR_SHORT_NAMES 
 #include "zerror.h"
 
 zres validate_input(const char *key, int value) 
