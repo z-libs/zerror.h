@@ -1,5 +1,5 @@
-#include <stdio.h>
 
+#include <stdio.h>
 #define ZERROR_IMPLEMENTATION
 #define Z_SHORT_ERR 
 #define Z_ENABLE_TRACE

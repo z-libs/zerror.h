@@ -1,16 +1,17 @@
 # zerror.h
 
-`zerror.h` brings **Result Types** (like Rust's `Result<T, E>`) and robust error propagation to C. It replaces fragile integer error codes and global `errno` checks with a type-safe, expressive, and context-rich error handling system.
+`zerror.h` brings **Result Types** (like Rust's `Result<T, E>`) and robust error propagation to C. It replaces fragile integer error codes with a type-safe, expressive, and context-rich error handling system.
 
 It is designed to be **Zero Overhead** in the success path and seamlessly integrates with GCC/Clang extensions to provide modern syntax (like `try()`) without breaking standard C compatibility.
 
 ## Features
 
 * **Result Pattern**: Functions return a tagged union (`zres` or `ResInt`) containing either a value or an error.
-* **Context Propagation**: Errors carry file, line, and source context automatically.
-* **Zero Boilerplate**: Pre-defined results for common types (`int`, `bool`, `size_t`, `void*`).
-* **Modern Syntax**: Use `try()`, `check()`, and `defer()` macros for cleaner control flow (requires GCC/Clang/MSVC extensions).
-* **Error Wrapping**: Wrap low-level errors with high-level context (for example, "File Not Found" -> "Config Load Failed").
+* **Stack Tracing**: Errors automatically record their path through the call stack (Logical Traceback) when enabled.
+* **Context Propagation**: Attach variables and messages to errors as they bubble up (e.g., "Transaction failed" -> "ID: 420").
+* **Debugger Integration**: Automatically triggers breakpoints (`SIGTRAP`) at the exact moment an error is created.
+* **Modern Syntax**: Use `try()`, `check()`, and `defer()` macros for cleaner control flow.
+* **Formatted Errors**: Create errors with `printf`-style formatting directly.
 * **Thread Safe**: Error buffers use Thread Local Storage (TLS).
 * **Single Header**: Drop-in and use. No linking required.
 
@@ -45,20 +46,21 @@ DEFINE_RESULT(User, ResUser)
 
 ### Returning Results
 
-Functions return either `_ok(value)` or `_err(error)`.
+Functions return either `_ok(value)` or `_err(error)`. You can use formatted strings when creating errors.
 
 ```c
 ResUser find_user(int id) 
 {
     if (id < 0) 
     {
-        return ResUser_err(zerr_create(1, "Invalid ID"));
+        // Z_DEBUG will trigger a breakpoint here automatically!
+        return ResUser_err(zerr_create(400, "Invalid ID: %d", id));
     }
     return ResUser_ok((User){id, "Alice"});
 }
 ```
 
-### Handling Errors
+### Handling Errors (The Modern Way)
 
 Use `try()` to propagate errors automatically.
 
@@ -74,31 +76,88 @@ ResUser login(int id)
 }
 ```
 
-## Usage: Architecture
+## Debugging & Tracing
 
-`zerror.h` encourages a specific architectural pattern:
+`zerror.h` is designed to make debugging C code significantly easier.
 
-1.  **Leaf Functions** return typed results (`ResInt`, `ResPtr`).
-2.  **Logic Functions** propagate errors using `try()` / `check()`.
-3.  **Entry Point (Main)** catches and prints the final error using `run()`.
-
-### The "Main" Wrapper
-
-It is recommended to wrap your logic in a function returning `zres` (void result) and call it from `main`.
+### Enable Tracing
+Define `Z_ENABLE_TRACE` before including the header. Every time an error passes through `try` or `check`, the location is recorded.
 
 ```c
+#define Z_ENABLE_TRACE
 #include "zerror.h"
+```
 
-// Your logic entry point
-zres app_main(void) {
-    int config = try_into(zres, load_config("settings.ini"));
-    check( process_data(config) );
+> **Output Example:**
+> ```text
+> [!] Error: Mass cannot be negative
+>     at calculate_physics (physics.c:15)
+>     at update_entity (game.c:24)
+>     at game_loop (main.c:40) [Origin]
+> ```
+
+### Enable Debug Traps
+Define `Z_DEBUG` to force a hardware breakpoint (`SIGTRAP`) whenever an error is created. This allows you to inspect the state in GDB/VS/LLDB *before* the stack unwinds.
+
+```c
+#define Z_DEBUG
+#include "zerror.h"
+```
+
+## Advanced Usage
+
+### Contextual Variables (`check_ctx`)
+
+You can attach runtime values to the stack trace as the error bubbles up.
+
+```c
+zres process_transaction(int id) 
+{
+    // If this fails, the error trace will include "Transaction ID: [id]".
+    check_ctx(verify_funds(id), "Transaction ID: %d", id);
     return zres_ok();
 }
+```
 
-int main(void) {
-    // 'run' executes the function and pretty-prints any unhandled error.
-    return run(app_main());
+### Wrapping Errors (`check_wrap`)
+
+Wrap low-level errors with high-level context descriptions.
+
+```c
+zres load_texture(const char *path) 
+{
+    // If read_file fails, the error becomes:
+    // "Failed to load sprite"
+    //   | context: "File not found"
+    check_wrap(read_file(path), "Failed to load sprite");
+    return zres_ok();
+}
+```
+
+### Validation (`ensure`)
+
+Validate conditions without repetitive if-statements.
+
+```c
+ResInt calculate(int val) 
+{
+    ensure_into(ResInt, val > 0, 101, "Value must be positive");
+    return ResInt_ok(val * 2);
+}
+```
+
+### Resource Cleanup (`defer`)
+
+Ensure resources are freed even if an error occurs.
+
+```c
+void process_file(const char* path)
+{
+    FILE *f = fopen(path, "r");
+    defer( fclose(f) ); // Runs when scope exits (Error OR Success).
+
+    check( read_header(f) );
+    // ...
 }
 ```
 
@@ -110,77 +169,53 @@ These macros rely on compiler extensions (Statement Expressions). They are avail
 
 | Macro | Description |
 | :--- | :--- |
-| `try(expr)` | Evaluates `expr`. If it returns an error, it is returned immediately. Otherwise, evaluates to the internal value. **Use when return types match.** |
-| `check(expr)` | Evaluates `expr` (which must return `zres`). If it fails, the error is returned. **Use for void-returning functions.** |
-| `try_into(T, expr)` | Evaluates `expr`. If it fails, converts the error to type `T` and returns it. **Use when return types differ.** |
-| `check_into(T, expr)`| Like `check`, but for functions returning `T` instead of `zres`. |
-| `try_ptr(T, ptr, code, msg)` | Checks if `ptr` is NULL. If so, returns an error of type `T`. Otherwise, returns `ptr`. |
-| `try_or(expr, default)` | Evaluates `expr`. If it fails, evaluates to `default`. If it succeeds, evaluates to the value. |
-| `unwrap(expr)` | Panics (aborts) if `expr` is an error. Useful for prototyping or tests. |
-| `expect(expr, msg)` | Like `unwrap`, but prints a custom message before panicking. |
+| `try(expr)` | Evaluates `expr`. If error, returns it. Else evaluates to value. **Use when return types match.** |
+| `check(expr)` | Evaluates `expr` (void result). If error, returns it. |
+| `try_into(T, expr)` | Like `try`, but converts the error to return type `T`. **Use when return types differ.** |
+| `check_into(T, expr)`| Like `check`, but returns error of type `T`. |
+| `check_ctx(expr, fmt...)`| Like `check`, but wraps the error with a formatted message (variables). |
+| `check_wrap(expr, fmt...)`| Like `check`, but wraps the error with a new high-level description. |
+| `try_ptr(T, ptr, code, msg)` | Checks if `ptr` is NULL. If so, returns error `T`. |
+| `try_or(expr, default)` | Evaluates `expr`. If error, returns `default`. |
+| `unwrap(expr)` | Panics (aborts) if `expr` is an error. |
+| `expect(expr, msg)` | Like `unwrap`, but prints a custom message. |
 | `defer(code)` | Executes `code` when the current scope exits (RAII). |
+
+**Validation**
+
+| Macro | Description |
+| :--- | :--- |
+| `ensure(cond, code, msg)` | If `cond` is false, returns `zres` error. |
+| `ensure_into(T, cond, code, msg)` | If `cond` is false, returns `T` error. |
 
 **Error Creation**
 
 | Function/Macro | Description |
 | :--- | :--- |
-| `zerr_create(code, msg)` | Creates a new error with the current file/line captured. |
-| `zres_ok()` | Returns a generic "Success" result (void). |
-| `zres_err(e)` | Returns a generic "Failure" result wrapping `e`. |
-| `T##_ok(val)` | Returns a typed success result (for example, `ResInt_ok(5)`). |
-| `T##_err(e)` | Returns a typed failure result (for example, `ResInt_err(e)`). |
-
-## Error Context & Wrapping
-
-You can wrap errors to add context as they bubble up the stack. This creates a "Traceback" like effect without the overhead of capturing stack traces.
-
-```c
-zres load_texture(const char *path) 
-{
-    FILE *f = fopen(path, "rb");
-    if (!f) return zres_err(zerr_create(1, "File not found"));
-    // ...
-    return zres_ok();
-}
-
-zres init_player() 
-{
-    // If load_texture fails, the error becomes: 
-    // "Failed to load player sprite"
-    //   | context: "File not found"
-    check(zerr_wrap(load_texture("hero.png"), "Failed to load player sprite"));
-    return zres_ok();
-}
-```
+| `zerr_create(code, fmt, ...)` | Creates error with formatted message. Traps if `Z_DEBUG` is set. |
+| `zres_ok()` | Returns generic "Success". |
+| `zres_err(e)` | Returns generic "Failure". |
+| `T##_ok(val)` | Returns typed success (e.g., `ResInt_ok(5)`). |
+| `T##_err(e)` | Returns typed failure. |
 
 ## Predefined Results
 
 `zerror.h` comes with common result types pre-defined for convenience.
 
-| Type | Result Name | Ok Constructor | Err Constructor |
-| :--- | :--- | :--- | :--- |
-| `int` | `ResInt` | `ResInt_ok(v)` | `ResInt_err(e)` |
-| `float` | `ResFloat` | `ResFloat_ok(v)` | `ResFloat_err(e)` |
-| `bool` | `ResBool` | `ResBool_ok(v)` | `ResBool_err(e)` |
-| `size_t` | `ResSize` | `ResSize_ok(v)` | `ResSize_err(e)` |
-| `void*` | `ResPtr` | `ResPtr_ok(v)` | `ResPtr_err(e)` |
-| `char*` | `ResStr` | `ResStr_ok(v)` | `ResStr_err(e)` |
+| Type | Result Name |
+| :--- | :--- |
+| `int` | `ResInt` |
+| `float` | `ResFloat` |
+| `bool` | `ResBool` |
+| `size_t` | `ResSize` |
+| `void*` | `ResPtr` |
+| `char*` | `ResStr` |
 
-To define your own, use:
+## Configuration Options
 
-```c
-DEFINE_RESULT(MyType, ResName)
-```
-
-## Compilation & Extensions
-
-`zerror.h` is strictly Standard C compliant, but the "Flow Control Macros" (`try`, `check`, `defer`) rely on **Statement Expressions**, a widely supported compiler extension.
-
-* **Supported:** GCC, Clang, Intel C, MSVC (experimental/recent).
-* **Fallback:** If `Z_HAS_MODERN_C` detects an unsupported environment, these macros are disabled. You can still use the `if (res.is_ok)` pattern manually.
-
-## C++ Interop
-
-`zerror.h` is C++ compatible (`extern "C"`). However, since C++ has exceptions, you might not need `zerror` in pure C++ code. It is primarily designed for C codebases or C++ projects interacting with C interfaces.
-
-The result types are generated as standard structs/unions, making them POD (Plain Old Data) and safe to pass across C/C++ boundaries.
+| Define | Effect |
+| :--- | :--- |
+| `ZERROR_IMPLEMENTATION` | Enables the implementation (define in one `.c` file). |
+| `Z_SHORT_ERR` | Enables short aliases (`try`, `check`, `defer`, etc.). |
+| `Z_ENABLE_TRACE` | Enables logical stack tracing. |
+| `Z_DEBUG` | Enables breakpoints (`SIGTRAP`) on error creation. |
