@@ -13,6 +13,8 @@
 extern "C" {
 #endif
 
+/* -> Configuration. */
+
 /* Feature detection. */
 #if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 202311L
     #define Z_TYPEOF(x) typeof(x)
@@ -39,6 +41,19 @@ extern "C" {
 #define Z_CONCAT(a, b) Z_CONCAT_(a, b)
 #define Z_UID(prefix) Z_CONCAT(prefix, __LINE__)
 
+/* Debug trap. */
+#if defined(Z_DEBUG)
+    #if defined(_MSC_VER)
+        #define Z_TRAP() __debugbreak()
+    #elif defined(__GNUC__) || defined(__clang__)
+        #define Z_TRAP() __builtin_trap()
+    #else
+        #define Z_TRAP() ((void)0)
+    #endif
+#else
+    #define Z_TRAP() ((void)0)
+#endif
+
 /* Core error type. */
 typedef struct 
 {
@@ -46,21 +61,25 @@ typedef struct
     const char *msg;
     const char *file;
     int line;
-    const char *source;
+    const char *func;
 } zerr;
 
-#define zerr_create(c, m) \
-    (zerr){ .code = (c), .msg = (m), .file = __FILE__, .line = __LINE__, .source = NULL }
+zerr zerr_create_impl(int code, const char *file, int line, const char *func, const char *fmt, ...);
 
-static inline zerr zerr_with_src(zerr e, const char *src) 
-{
-    if (e.source == NULL) e.source = src;
-    return e;
-}
+/* * Create Error: Captures location, traps debugger (if Z_DEBUG), and formats message.
+ * Usage: zerr_create(404, "User %d not found", uid); 
+ */
+#define zerr_create(code, ...) \
+    (Z_TRAP(), zerr_create_impl((code), __FILE__, __LINE__, __func__, __VA_ARGS__))
+
+/* Helper to attach trace info if enabled. */
+zerr zerr_add_trace(zerr e, const char *func, const char *file, int line);
 
 void zerr_print(zerr e);
 void zerr_panic(const char *msg, const char *file, int line);
 zerr zerr_wrap(zerr e, const char *fmt, ...);
+
+static inline zerr zerr_with_src(zerr e, const char *src) { return e; } // Legacy compat
 
 /* Result type generators. */
 #define DEFINE_RESULT(T, Name)                                  \
@@ -88,13 +107,20 @@ DEFINE_RESULT(size_t,   ResSize)
 DEFINE_RESULT(void*,    ResPtr)
 DEFINE_RESULT(char*,    ResStr)
 
-/* Macros and flow control. */
+/* --- Trace Logic --- */
+#ifdef Z_ENABLE_TRACE
+    #define Z_TRACE_OP(e) zerr_add_trace(e, __func__, __FILE__, __LINE__)
+#else
+    #define Z_TRACE_OP(e) (e)
+#endif
+
+/* --- Macros & Flow Control --- */
 
 #define Z_CHECK(expr, src)                                      \
     do {                                                        \
         Z_TYPEOF(expr) Z_UID(_r) = (expr);                      \
         if (!Z_UID(_r).is_ok) {                                 \
-            Z_UID(_r).err = zerr_with_src(Z_UID(_r).err, src);  \
+            Z_UID(_r).err = Z_TRACE_OP(Z_UID(_r).err);          \
             return zres_err(Z_UID(_r).err);                     \
         }                                                       \
     } while(0)
@@ -103,8 +129,41 @@ DEFINE_RESULT(char*,    ResStr)
     do {                                                        \
         Z_TYPEOF(expr) Z_UID(_r) = (expr);                      \
         if (!Z_UID(_r).is_ok) {                                 \
-            Z_UID(_r).err = zerr_with_src(Z_UID(_r).err, src);  \
+            Z_UID(_r).err = Z_TRACE_OP(Z_UID(_r).err);          \
             return RetType##_err(Z_UID(_r).err);                \
+        }                                                       \
+    } while(0)
+
+#define Z_CHECK_WRAP(expr, fmt, ...)                                        \
+    do {                                                                    \
+        Z_TYPEOF(expr) Z_UID(_r) = (expr);                                  \
+        if (!Z_UID(_r).is_ok) {                                             \
+            Z_UID(_r).err = Z_TRACE_OP(Z_UID(_r).err);                      \
+            return zres_err(zerr_wrap(Z_UID(_r).err, fmt, ##__VA_ARGS__));  \
+        }                                                                   \
+    } while(0)
+
+#define Z_CHECK_CTX(expr, fmt, ...)                                         \
+    do {                                                                    \
+        Z_TYPEOF(expr) Z_UID(_r) = (expr);                                  \
+        if (!Z_UID(_r).is_ok) {                                             \
+            Z_UID(_r).err = Z_TRACE_OP(Z_UID(_r).err);                      \
+            Z_UID(_r).err = zerr_wrap(Z_UID(_r).err, fmt, ##__VA_ARGS__);   \
+            return zres_err(Z_UID(_r).err);                                 \
+        }                                                                   \
+    } while(0)
+
+#define Z_ENSURE(cond, code, msg)                               \
+    do {                                                        \
+        if (!(cond)) {                                          \
+            return zres_err(zerr_create((code), (msg)));        \
+        }                                                       \
+    } while(0)
+
+#define Z_ENSURE_INTO(RetType, cond, code, msg)                 \
+    do {                                                        \
+        if (!(cond)) {                                          \
+            return RetType##_err(zerr_create((code), (msg)));   \
         }                                                       \
     } while(0)
 
@@ -113,7 +172,7 @@ DEFINE_RESULT(char*,    ResStr)
     #define Z_TRY(expr, src)                                            \
         ({  Z_TYPEOF(expr) Z_UID(_res) = (expr);                        \
             if (!Z_UID(_res).is_ok) {                                   \
-                Z_UID(_res).err = zerr_with_src(Z_UID(_res).err, src);  \
+                Z_UID(_res).err = Z_TRACE_OP(Z_UID(_res).err);          \
                 return Z_UID(_res);                                     \
             }                                                           \
             Z_UID(_res).val;                                            \
@@ -122,7 +181,7 @@ DEFINE_RESULT(char*,    ResStr)
     #define Z_TRY_INTO(RetType, expr, src)                              \
         ({  Z_TYPEOF(expr) Z_UID(_res) = (expr);                        \
             if (!Z_UID(_res).is_ok) {                                   \
-                Z_UID(_res).err = zerr_with_src(Z_UID(_res).err, src);  \
+                Z_UID(_res).err = Z_TRACE_OP(Z_UID(_res).err);          \
                 return RetType##_err(Z_UID(_res).err);                  \
             }                                                           \
             Z_UID(_res).val;                                            \
@@ -164,7 +223,12 @@ DEFINE_RESULT(char*,    ResStr)
 #ifdef Z_SHORT_ERR
     #define check(expr)             Z_CHECK(expr, #expr)
     #define check_into(T, expr)     Z_CHECK_INTO(T, expr, #expr)
+    #define check_wrap(expr, ...)   Z_CHECK_WRAP(expr, __VA_ARGS__)
+    #define check_ctx(expr, ...)    Z_CHECK_CTX(expr, __VA_ARGS__)
     
+    #define ensure(c, code, m)          Z_ENSURE(c, code, m)
+    #define ensure_into(T, c, code, m)  Z_ENSURE_INTO(T, c, code, m)
+
     #if Z_HAS_MODERN_C
         #define try(expr)               Z_TRY(expr, #expr)
         #define try_into(T, expr)       Z_TRY_INTO(T, expr, #expr)
@@ -182,11 +246,20 @@ DEFINE_RESULT(char*,    ResStr)
 
 #ifdef ZERROR_IMPLEMENTATION
 
+static Z_THREAD_LOCAL char z_err_buffers[8][2048]; 
+static Z_THREAD_LOCAL int z_err_idx = 0;
+
+static char* zerr_get_buf(void) {
+    return z_err_buffers[z_err_idx++ & 7];
+}
+
 void zerr_print(zerr e) 
 {
     fprintf(stderr, "\n\033[1;31m[!] Error:\033[0m %s\n", e.msg);
-    if (e.source) fprintf(stderr, "    Source: %s\n", e.source);
-    fprintf(stderr, "    Loc:    %s:%d\n", e.file, e.line);
+    fprintf(stderr, "    \033[0;90mat\033[0m %s (%s:%d) \033[0;33m[Origin]\033[0m\n", 
+            e.func ? e.func : "unknown", 
+            e.file, 
+            e.line);
     fprintf(stderr, "\n");
 }
 
@@ -197,21 +270,44 @@ void zerr_panic(const char *msg, const char *file, int line)
     abort();
 }
 
-static Z_THREAD_LOCAL char z_err_buffers[16][1024];
-static Z_THREAD_LOCAL int z_err_idx = 0;
+zerr zerr_create_impl(int code, const char *file, int line, const char *func, const char *fmt, ...)
+{
+    char *buf = zerr_get_buf();
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(buf, 2048, fmt, args);
+    va_end(args);
+
+    return (zerr){ .code = code, .msg = buf, .file = file, .line = line, .func = func };
+}
+
+zerr zerr_add_trace(zerr e, const char *func, const char *file, int line) 
+{
+    char *buf = zerr_get_buf();
+    
+    int len = snprintf(buf, 2048, "%s", e.msg);
+    if (len >= 2048) len = 2047;
+
+    if (len < 2000) {
+        snprintf(buf + len, 2048 - len, "\n    \033[0;90mat\033[0m %s (%s:%d)", func, file, line);
+    }
+    
+    return (zerr){ .code = e.code, .msg = buf, .file = e.file, .line = e.line, .func = e.func };
+}
 
 zerr zerr_wrap(zerr e, const char *fmt, ...) 
 {
-    char *buf = z_err_buffers[z_err_idx++ & 15];
-    int len = snprintf(buf, 1024, "%s", e.msg);
-    if (len < 0) len = 0; if (len >= 1024) len = 1023;
+    char *buf = zerr_get_buf();
     
-    int remaining = 1024 - len - 1;
-    if (remaining > 20)
+    int len = snprintf(buf, 2048, "%s", e.msg);
+    if (len >= 2048) len = 2047;
+
+    int remaining = 2048 - len - 1;
+    if (remaining > 50) 
     { 
-        strncat(buf, "\n  | context: ", remaining);
-        len += 13; 
-        remaining = 1024 - len - 1;
+        strncat(buf, "\n  \033[1;31m|\033[0m context: ", remaining);
+        len = strlen(buf);
+        remaining = 2048 - len - 1;
 
         if (remaining > 0) 
         {
@@ -221,7 +317,7 @@ zerr zerr_wrap(zerr e, const char *fmt, ...)
             va_end(args);
         }
     }
-    return (zerr){ .code = e.code, .msg = buf, .file = e.file, .line = e.line, .source = e.source };
+    return (zerr){ .code = e.code, .msg = buf, .file = e.file, .line = e.line, .func = e.func };
 }
 #endif // ZERROR_IMPLEMENTATION 
 #ifdef __cplusplus
