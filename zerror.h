@@ -28,7 +28,7 @@ extern "C" {
 #if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 202311L
     #define Z_TYPEOF(x) typeof(x)
     #define Z_HAS_MODERN_C 1
-#elif defined(__GNUC__) || defined(__clang__)
+#elif defined(__GNUC__) || defined(__clang__) || defined(__TINYC__)
     #define Z_TYPEOF(x) __typeof__(x)
     #define Z_HAS_MODERN_C 1
 #else
