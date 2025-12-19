@@ -514,7 +514,7 @@ int zerr_run(zres result);
 #       define defer(code)              zerr_defer(code)
 #   endif
     
-#   define run(e)                          ZERROR_RUN(e)
+#   define run(e)                       ZERROR_RUN(e)
 #endif
 
 #ifdef __cplusplus
