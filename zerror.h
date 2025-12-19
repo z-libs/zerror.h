@@ -514,7 +514,7 @@ int zerr_run(zres result);
 #       define defer(code)              zerr_defer(code)
 #   endif
     
-#   define run                          ZERROR_RUN(e)
+#   define run(e)                          ZERROR_RUN(e)
 #endif
 
 #ifdef __cplusplus
@@ -707,6 +707,8 @@ namespace z_error
 #endif // ZERROR_H
 
 #ifdef ZERROR_IMPLEMENTATION
+#ifndef ZERROR_IMPLEMENTATION_GUARD
+#define ZERROR_IMPLEMENTATION_GUARD
 
 // Colors.
 #if defined(ZERROR_NO_COLOR)
@@ -851,4 +853,5 @@ int zerr_run(zres result)
 } // extern "C"
 #endif
 
+#endif // ZERROR_IMPLEMENTATION_GUARD
 #endif // ZERROR_IMPLEMENTATION
