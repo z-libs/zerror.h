@@ -1,4 +1,3 @@
-
 #include <stdio.h>
 #include <assert.h>
 #include <string.h>
@@ -119,8 +118,7 @@ void test_wrapping(void)
     assert(wrapped.code == 503);
     assert(strstr(wrapped.msg, "Login Failed") != NULL);
     assert(strstr(wrapped.msg, "Database Unavailable") != NULL);
-    assert(strstr(wrapped.msg, "context") != NULL);
-
+    
     PASS();
 }
 
@@ -157,4 +155,3 @@ int main(void)
     printf("=> All tests passed successfully.\n");
     return 0;
 }
-

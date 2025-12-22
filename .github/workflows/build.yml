@@ -44,6 +44,11 @@ jobs:
           # If it fails (non-zero exit), we print an error and exit.
           make test || { echo "::error::Unit tests failed! Check the logs above for assertion errors."; exit 1; }
 
+      - name: Generate Documentation
+        run: |
+          echo "Regenerating README.md..."
+          make docs
+
       - name: Commit and Push changes
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
